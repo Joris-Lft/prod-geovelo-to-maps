@@ -103,10 +103,10 @@ sommet). `features[0].properties["track-length"]` donne la longueur totale. Le t
 (`Longitude, Latitude, Elevation, Distance, ..., WayTags, NodeTags, ...`), puis une ligne par
 **tronçon** (portion de voie aux tags constants). `Longitude`/`Latitude` sont des entiers ×1e6
 (en chaîne) correspondant au **point de fin** du tronçon ; on les associe à l'index de géométrie
-correspondant en avançant séquentiellement, dans une fenêtre bornée à ~300 m (repli sur le point
-le plus proche *dans cette fenêtre* si aucune correspondance exacte n'est trouvée — cette borne
-évite à la fois les sauts aberrants sur un tracé qui repasse près de lui-même et un coût
-quadratique sur les longs itinéraires). `WayTags` contient les tags de la voie (ex.
+correspondant en avançant séquentiellement : correspondance exacte cherchée sur tout le reste du
+tracé (coût linéaire au total), et seulement à défaut, repli sur le sommet le plus proche dans une
+fenêtre de ±100 m autour de la position attendue (distance cumulée + colonne `Distance`) — ce qui
+évite les sauts aberrants sur un tracé qui repasse près de lui-même. `WayTags` contient les tags de la voie (ex.
 `highway=cycleway`, `highway=secondary surface=asphalt cycleway:both=lane`), `NodeTags` ceux du
 nœud de fin (ex. `highway=traffic_signals`). BRouter ne décrit pas toujours la toute fin du tracé
 dans `messages` : une section finale sans tags est ajoutée pour couvrir ce reliquat (comptée dans

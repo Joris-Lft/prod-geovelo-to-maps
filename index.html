@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Geovelo → Google Maps vélo</title>
+  <meta
+    name="description"
+    content="Convertit une URL d'itinéraire Geovelo en liens Google Maps vélo qui collent au maximum aux voies cyclables."
+  />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0b0f14" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin="anonymous"
+  />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="page-header">
+    <h1>Geovelo → Google Maps vélo</h1>
+    <p class="lead">
+      Collez une URL d'itinéraire Geovelo : l'outil génère des liens Google Maps en mode vélo qui suivent
+      au mieux le tracé cyclable réel.
+    </p>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="form-title">
+      <h2 id="form-title" class="visually-hidden">Convertir une URL</h2>
+      <form id="convertForm" novalidate>
+        <div class="field">
+          <label for="geoveloUrlInput">URL de l'itinéraire Geovelo</label>
+          <textarea
+            id="geoveloUrlInput"
+            name="url"
+            rows="3"
+            placeholder="https://geovelo.app/fr/route/?from=...&amp;to=...&amp;steps=..."
+            required
+            aria-describedby="statusRegion"
+            aria-invalid="false"
+          ></textarea>
+        </div>
+
+        <div class="options-grid">
+          <div class="field">
+            <label for="numLinksSelect">Nombre de liens Google Maps</label>
+            <select id="numLinksSelect" name="numLinks">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+            <p id="capacityHint" class="hint"></p>
+          </div>
+
+          <div class="field">
+            <label for="profileSelect">Profil de routage</label>
+            <select id="profileSelect" name="profile" aria-describedby="profileHint">
+              <option value="safety" selected>Sûreté</option>
+              <option value="trekking">Randonnée</option>
+            </select>
+            <p id="profileHint" class="hint"></p>
+          </div>
+        </div>
+
+        <button type="submit" id="convertBtn" class="btn btn-primary btn-submit" aria-busy="false">Convertir</button>
+      </form>
+
+      <p id="statusRegion" role="status" aria-live="polite" class="status"></p>
+    </section>
+
+    <section id="resultsSection" class="panel" hidden aria-labelledby="results-title">
+      <h2 id="results-title" tabindex="-1">Résultats</h2>
+      <p id="summaryText" class="summary"></p>
+      <p class="hint">
+        Conçu pour ouvrir sur ordinateur puis « Envoyer vers votre téléphone » ; un navigateur
+        mobile peut limiter l'itinéraire à 3 étapes.
+      </p>
+
+      <ul id="segmentsList" class="segments-list"></ul>
+
+      <button type="button" id="exportGpxBtn" class="btn btn-secondary">Exporter en GPX</button>
+    </section>
+
+    <section id="mapSection" class="panel" hidden aria-labelledby="map-title">
+      <h2 id="map-title" class="visually-hidden">Aperçu cartographique</h2>
+      <div id="map"></div>
+      <ul id="legend" class="legend" aria-hidden="true"></ul>
+    </section>
+
+    <section class="panel note">
+      <p>
+        Service de routage : <a href="https://brouter.de/" target="_blank" rel="noopener noreferrer">BRouter</a>
+        (communautaire, gratuit). Fond de carte : © contributeurs
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>.
+        Voir le <a href="https://github.com/Joris-Lft/prod-geovelo-to-maps#readme" target="_blank" rel="noopener noreferrer">README</a>
+        pour le fonctionnement détaillé et les limites connues.
+      </p>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <p>
+      Cette page envoie les coordonnées de l'itinéraire (départ, étapes, arrivée) au service de routage
+      <a href="https://brouter.de/" target="_blank" rel="noopener noreferrer">brouter.de</a> (avec repli
+      automatique en cas d'échec), charge la bibliothèque cartographique Leaflet depuis le CDN unpkg.com et les tuiles depuis
+      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>,
+      et ouvre des liens vers Google Maps. Aucune donnée n'est stockée ni envoyée à un autre serveur.
+    </p>
+  </footer>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin="anonymous"
+  ></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

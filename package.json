@@ -1,0 +1,13 @@
+{
+  "name": "geovelo-to-maps",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Convertit une URL d'itinéraire Geovelo en liens Google Maps vélo collant aux voies cyclables.",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

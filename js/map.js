@@ -8,7 +8,7 @@
 const LEGEND = [
   { key: 'anchorStart', color: '#4ade80', label: 'Départ' },
   { key: 'anchorEnd', color: '#fb7185', label: 'Arrivée' },
-  { key: 'anchorStep', color: '#60a5fa', label: 'Étape Geovelo' },
+  { key: 'anchorStep', color: '#60a5fa', label: 'Étape du parcours' },
   { key: 'added', color: '#fbbf24', label: 'Point ajouté' },
   { key: 'boundary', color: '#c084fc', label: 'Limite de segment' },
 ];
@@ -107,6 +107,6 @@ export function renderLegend(listEl) {
   const line = document.createElement('span');
   line.className = 'legend-line';
   lineLi.appendChild(line);
-  lineLi.appendChild(document.createTextNode(' Tracé cyclable (pointillé = mode simple)'));
+  lineLi.appendChild(document.createTextNode(" Tracé de l'itinéraire (pointillé = mode simple)"));
   listEl.appendChild(lineLi);
 }

@@ -3,13 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Geovelo → Google Maps vélo</title>
+  <title>Geovelo / Komoot → Google Maps</title>
   <meta
     name="description"
-    content="Convertit une URL d'itinéraire Geovelo en liens Google Maps vélo qui collent au maximum aux voies cyclables."
+    content="Convertit une URL d'itinéraire Geovelo ou Komoot en liens Google Maps (vélo ou marche) qui collent au maximum au tracé réel."
   />
   <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#0b0f14" />
+  <!-- Le préremplissage ?url=... peut contenir un jeton de partage Komoot : on
+       n'envoie que l'origine (ni chemin ni query) aux sites tiers. À NE PAS
+       remplacer par "no-referrer" : les serveurs de tuiles OpenStreetMap
+       exigent un Referer pour identifier l'application et renvoient sinon une
+       tuile "Access blocked" (avec un statut HTTP 200, donc silencieuse). -->
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -20,10 +26,10 @@
 </head>
 <body>
   <header class="page-header">
-    <h1>Geovelo → Google Maps vélo</h1>
+    <h1>Geovelo / Komoot → Google Maps</h1>
     <p class="lead">
-      Collez une URL d'itinéraire Geovelo : l'outil génère des liens Google Maps en mode vélo qui suivent
-      au mieux le tracé cyclable réel.
+      Collez une URL d'itinéraire Geovelo ou Komoot : l'outil détecte la source et génère des liens
+      Google Maps (vélo ou marche) qui suivent au mieux le tracé réel.
     </p>
   </header>
 
@@ -32,12 +38,12 @@
       <h2 id="form-title" class="visually-hidden">Convertir une URL</h2>
       <form id="convertForm" novalidate>
         <div class="field">
-          <label for="geoveloUrlInput">URL de l'itinéraire Geovelo</label>
+          <label for="routeUrlInput">URL de l'itinéraire (Geovelo ou Komoot)</label>
           <textarea
-            id="geoveloUrlInput"
+            id="routeUrlInput"
             name="url"
             rows="3"
-            placeholder="https://geovelo.app/fr/route/?from=...&amp;to=...&amp;steps=..."
+            placeholder="https://geovelo.app/fr/route/?from=...&amp;to=...&amp;steps=... ou https://www.komoot.com/tour/..."
             required
             aria-describedby="statusRegion"
             aria-invalid="false"
@@ -59,12 +65,23 @@
           </div>
 
           <div class="field">
-            <label for="profileSelect">Profil de routage</label>
+            <label for="profileSelect">Profil de routage (Geovelo uniquement)</label>
             <select id="profileSelect" name="profile" aria-describedby="profileHint">
               <option value="safety" selected>Sûreté</option>
               <option value="trekking">Randonnée</option>
             </select>
             <p id="profileHint" class="hint"></p>
+          </div>
+
+          <div class="field">
+            <label for="modeSelect">Mode</label>
+            <select id="modeSelect" name="mode" aria-describedby="modeHint">
+              <option value="bicycling" selected>Vélo</option>
+              <option value="walking">Marche</option>
+            </select>
+            <p id="modeHint" class="hint">
+              Prérempli automatiquement (vélo pour Geovelo, ou d'après le sport du tour Komoot) ; modifiable.
+            </p>
           </div>
         </div>
 
@@ -76,6 +93,7 @@
 
     <section id="resultsSection" class="panel" hidden aria-labelledby="results-title">
       <h2 id="results-title" tabindex="-1">Résultats</h2>
+      <p id="tourNameText" class="summary" hidden></p>
       <p id="summaryText" class="summary"></p>
       <p class="hint">
         Conçu pour ouvrir sur ordinateur puis « Envoyer vers votre téléphone » ; un navigateur
@@ -95,8 +113,10 @@
 
     <section class="panel note">
       <p>
-        Service de routage : <a href="https://brouter.de/" target="_blank" rel="noopener noreferrer">BRouter</a>
-        (communautaire, gratuit). Fond de carte : © contributeurs
+        Sources supportées : <strong>Geovelo</strong> (via le service de routage
+        <a href="https://brouter.de/" target="_blank" rel="noopener noreferrer">BRouter</a>, communautaire et
+        gratuit) et <strong>Komoot</strong> (via son API publique, qui fournit directement le tracé). Fond de
+        carte : © contributeurs
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>.
         Voir le <a href="https://github.com/Joris-Lft/prod-geovelo-to-maps#readme" target="_blank" rel="noopener noreferrer">README</a>
         pour le fonctionnement détaillé et les limites connues.
@@ -106,9 +126,11 @@
 
   <footer class="page-footer">
     <p>
-      Cette page envoie les coordonnées de l'itinéraire (départ, étapes, arrivée) au service de routage
-      <a href="https://brouter.de/" target="_blank" rel="noopener noreferrer">brouter.de</a> (avec repli
-      automatique en cas d'échec), charge la bibliothèque cartographique Leaflet depuis le CDN unpkg.com et les tuiles depuis
+      Pour un itinéraire Geovelo, cette page envoie les coordonnées de l'itinéraire (départ, étapes, arrivée)
+      au service de routage <a href="https://brouter.de/" target="_blank" rel="noopener noreferrer">brouter.de</a>
+      (avec repli automatique en cas d'échec) ; pour un itinéraire Komoot, elle interroge directement l'API
+      publique de <a href="https://www.komoot.com/" target="_blank" rel="noopener noreferrer">komoot.com</a>.
+      Elle charge la bibliothèque cartographique Leaflet depuis le CDN unpkg.com et les tuiles depuis
       <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>,
       et ouvre des liens vers Google Maps. Aucune donnée n'est stockée ni envoyée à un autre serveur.
     </p>

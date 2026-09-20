@@ -23,11 +23,20 @@ function assertPoints(points) {
   }
 }
 
+const VALID_MODES = new Set(['bicycling', 'walking']);
+
+function assertMode(mode) {
+  if (!VALID_MODES.has(mode)) {
+    throw new Error(`Mode de déplacement invalide : « ${mode} » (attendu bicycling ou walking).`);
+  }
+}
+
 /**
- * Lien Google Maps au format "API" (?api=1&origin=...&destination=...&waypoints=...).
+ * Lien Google Maps au format "API" (?api=1&origin=...&destination=...&waypoints=...&travelmode=...).
  */
-export function buildApiUrl(points) {
+export function buildApiUrl(points, mode = 'bicycling') {
   assertPoints(points);
+  assertMode(mode);
   const origin = points[0];
   const destination = points[points.length - 1];
   const middle = points.slice(1, -1);
@@ -39,21 +48,31 @@ export function buildApiUrl(points) {
   if (middle.length > 0) {
     params.set('waypoints', middle.map(formatLatLng).join('|'));
   }
-  params.set('travelmode', 'bicycling');
+  params.set('travelmode', mode);
 
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
+// Suffixe "data=" du format chemin par mode : non documenté officiellement
+// par Google, mais vérifié empiriquement (Chrome headless, voir README) :
+// !3e1 sélectionne bien le mode vélo, !3e2 le mode marche (à ne pas confondre
+// avec !3e3, qui sélectionne les transports en commun).
+const PATH_MODE_SUFFIX = {
+  bicycling: '!4m2!4m1!3e1',
+  walking: '!4m2!4m1!3e2',
+};
+
 /**
- * Lien Google Maps au format "chemin" (/maps/dir/lat,lng/lat,lng/.../data=!4m2!4m1!3e1).
- * Le suffixe data=!4m2!4m1!3e1 force le mode vélo dans ce format ; il n'est
+ * Lien Google Maps au format "chemin" (/maps/dir/lat,lng/lat,lng/.../data=!4m2!4m1!3eN).
+ * Le suffixe `data=` force le mode de déplacement dans ce format ; il n'est
  * pas documenté officiellement par Google mais a été vérifié empiriquement
- * (voir README).
+ * pour le vélo et la marche (voir README).
  */
-export function buildPathUrl(points) {
+export function buildPathUrl(points, mode = 'bicycling') {
   assertPoints(points);
+  assertMode(mode);
   const path = points.map(formatLatLng).join('/');
-  return `https://www.google.com/maps/dir/${path}/data=!4m2!4m1!3e1`;
+  return `https://www.google.com/maps/dir/${path}/data=${PATH_MODE_SUFFIX[mode]}`;
 }
 
 /**

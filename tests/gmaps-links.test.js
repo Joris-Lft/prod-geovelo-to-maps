@@ -42,6 +42,31 @@ test('buildApiUrl/buildPathUrl require at least 2 points', () => {
   assert.throws(() => buildPathUrl([]));
 });
 
+test('buildApiUrl defaults to bicycling travelmode', () => {
+  const url = buildApiUrl([p(43.1, 1.1), p(43.2, 1.2)]);
+  assert.match(url, /travelmode=bicycling/);
+});
+
+test('buildApiUrl accepts walking travelmode', () => {
+  const url = buildApiUrl([p(43.1, 1.1), p(43.2, 1.2)], 'walking');
+  assert.match(url, /travelmode=walking/);
+});
+
+test('buildPathUrl uses the !3e2 suffix for walking (verified empirically, see README)', () => {
+  const url = buildPathUrl([p(43.1, 1.1), p(43.2, 1.2)], 'walking');
+  assert.equal(url, 'https://www.google.com/maps/dir/43.1,1.1/43.2,1.2/data=!4m2!4m1!3e2');
+});
+
+test('buildPathUrl still uses the !3e1 suffix for bicycling (default)', () => {
+  const url = buildPathUrl([p(43.1, 1.1), p(43.2, 1.2)]);
+  assert.match(url, /!3e1$/);
+});
+
+test('buildApiUrl/buildPathUrl reject an invalid mode', () => {
+  assert.throws(() => buildApiUrl([p(1, 1), p(2, 2)], 'driving'));
+  assert.throws(() => buildPathUrl([p(1, 1), p(2, 2)], 'driving'));
+});
+
 test('computeCapacity follows 9*numLinks + 1', () => {
   assert.equal(computeCapacity(1), 10);
   assert.equal(computeCapacity(2), 19);
@@ -98,4 +123,13 @@ test('generated URLs stay under the 2048-character Google Maps limit', () => {
   const points = Array.from({ length: MAX_POINTS_PER_LINK }, (_, i) => p(43 + i * 0.001, 1 + i * 0.001));
   assert.ok(buildApiUrl(points).length < GOOGLE_MAPS_URL_MAX_LENGTH);
   assert.ok(buildPathUrl(points).length < GOOGLE_MAPS_URL_MAX_LENGTH);
+});
+
+test('security: buildApiUrl/buildPathUrl only serialize lat/lng, never leaking extra point properties (e.g. a Komoot share token)', () => {
+  const points = [
+    { lat: 43.1, lng: 1.1, shareToken: 'SECRET_TOKEN', name: 'leak me' },
+    { lat: 43.2, lng: 1.2, shareToken: 'SECRET_TOKEN', name: 'leak me' },
+  ];
+  assert.doesNotMatch(buildApiUrl(points), /SECRET_TOKEN|leak me/);
+  assert.doesNotMatch(buildPathUrl(points), /SECRET_TOKEN|leak me/);
 });

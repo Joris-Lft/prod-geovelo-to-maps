@@ -130,6 +130,17 @@ textarea::placeholder {
   color: var(--color-text-muted);
 }
 
+/* Le rendu natif d'un <select disabled> est parfois trop peu contrasté sur
+   fond sombre (dépend du navigateur/OS) : on force un style cohérent avec le
+   thème plutôt que de laisser le texte quasi illisible. */
+select:disabled {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
 textarea:focus-visible,
 select:focus-visible,
 input:focus-visible,
@@ -160,6 +171,14 @@ textarea[aria-invalid='true'] {
   .options-grid {
     grid-template-columns: repeat(2, 1fr);
     align-items: start;
+  }
+}
+
+/* 3 champs (liens, profil, mode) : à partir de 960px, une seule ligne à 3
+   colonnes plutôt que 2 colonnes + "Mode" livré seul sur une 2e ligne. */
+@media (min-width: 960px) {
+  .options-grid {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 

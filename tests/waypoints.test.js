@@ -202,6 +202,76 @@ test('a candidate within 40 m of an anchor is excluded', () => {
   }
 });
 
+test('pre-indexed anchors (Komoot-style idx) are used directly, without projection', () => {
+  const route = lShapeRoute();
+  // idx volontairement "faux" au sens géométrique (ne correspond pas au point
+  // le plus proche) pour vérifier qu'il est bien repris tel quel plutôt que
+  // reprojeté par recherche.
+  const anchors = [
+    { lat: route.coords[0].lat, lng: route.coords[0].lng, idx: 0 },
+    { lat: route.coords[9].lat, lng: route.coords[9].lng, idx: 5 },
+    { lat: route.coords[18].lat, lng: route.coords[18].lng, idx: 18 },
+  ];
+  const result = selectWaypoints({ route, anchors, extraBudget: 0 });
+  assert.equal(result.length, 3);
+  assert.equal(result[0].idx, 0);
+  assert.equal(result[1].idx, 5);
+  assert.equal(result[2].idx, 18);
+});
+
+test('pre-indexed anchors: departure/arrival are still forced to the first/last geometry index', () => {
+  const route = lShapeRoute();
+  const anchors = [
+    { lat: route.coords[0].lat, lng: route.coords[0].lng, idx: 2 }, // idx non nul, doit être ramené à 0
+    { lat: route.coords[18].lat, lng: route.coords[18].lng, idx: 15 }, // doit être ramené au dernier index
+  ];
+  const result = selectWaypoints({ route, anchors, extraBudget: 0 });
+  assert.equal(result[0].idx, 0);
+  assert.equal(result[1].idx, route.coords.length - 1);
+});
+
+test('pre-indexed anchors: non-increasing indices are corrected to stay strictly increasing', () => {
+  const route = lShapeRoute();
+  const anchors = [
+    { lat: route.coords[0].lat, lng: route.coords[0].lng, idx: 0 },
+    { lat: route.coords[9].lat, lng: route.coords[9].lng, idx: 3 },
+    { lat: route.coords[10].lat, lng: route.coords[10].lng, idx: 3 }, // doublon volontaire
+    { lat: route.coords[18].lat, lng: route.coords[18].lng, idx: 18 },
+  ];
+  const result = selectWaypoints({ route, anchors, extraBudget: 0 });
+  for (let i = 1; i < result.length; i++) {
+    assert.ok(result[i].idx > result[i - 1].idx, 'idx must be strictly increasing');
+  }
+});
+
+test('pre-indexed anchors: heavily out-of-bounds indices are clamped and deduplicated, not just clamped forward (regression)', () => {
+  // 3 sommets seulement (lastIdx=2) ; les idx d'origine sont très hors bornes
+  // ([0, 999, 1000]). Un simple clamp+garde avant produirait [0, 2, 2] (deux
+  // ancres sur le même sommet) ; la correction avant+arrière doit produire
+  // [0, 1, 2], strictement croissant sans doublon.
+  const coords = [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 0.001 },
+    { lat: 0, lng: 0.002 },
+  ];
+  const route = { coords, sections: [], lengthM: 0 };
+  const anchors = [
+    { lat: coords[0].lat, lng: coords[0].lng, idx: 0 },
+    { lat: coords[1].lat, lng: coords[1].lng, idx: 999 },
+    { lat: coords[2].lat, lng: coords[2].lng, idx: 1000 },
+  ];
+  const result = selectWaypoints({ route, anchors, extraBudget: 0 });
+  assert.deepEqual(result.map((p) => p.idx), [0, 1, 2]);
+});
+
+test('pre-indexed anchors: mixing an anchor without idx falls back to projection (Geovelo behaviour)', () => {
+  const route = lShapeRoute();
+  const anchors = [route.coords[0], route.coords[9], route.coords[18]];
+  const result = selectWaypoints({ route, anchors, extraBudget: 0 });
+  assert.equal(result[0].idx, 0);
+  assert.equal(result[2].idx, route.coords.length - 1);
+});
+
 test('straight line geometry -> no point added', () => {
   const coords = [];
   for (let i = 0; i <= 10; i++) coords.push({ lat: 0, lng: 0.0002 * i });

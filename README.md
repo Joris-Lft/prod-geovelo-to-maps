@@ -1,8 +1,21 @@
-# Geovelo → Google Maps vélo
+# Geovelo / Komoot → Google Maps
 
 Site statique (HTML/CSS/JS vanilla, modules ES, aucun build) qui convertit une URL d'itinéraire
-Geovelo en un ou plusieurs liens Google Maps en mode vélo, en essayant de coller au maximum aux
-voies cyclables réelles.
+Geovelo ou Komoot en un ou plusieurs liens Google Maps (vélo ou marche), en essayant de coller au
+maximum au tracé réel (voies cyclables pour Geovelo, tracé de l'auteur pour Komoot).
+
+## Sources supportées
+
+Un seul champ d'URL en entrée : la source est détectée automatiquement d'après le nom d'hôte.
+
+| Source | Hôtes acceptés | Données récupérées | Mode par défaut |
+|---|---|---|---|
+| **Geovelo** | `geovelo.app`, `geovelo.fr` (et sous-domaines) | `from`/`steps`/`to` dans l'URL, puis tracé cyclable via [BRouter](#3-niveau-2--tracé-cyclable-via-brouter-jsrouterjs) | Vélo (toujours) |
+| **Komoot** | `komoot.com`, `komoot.de` (et sous-domaines) | Tracé complet et étapes directement via l'[API publique Komoot](#5-parseur-et-api-komoot-jskomoot-parserjs-jskomootjs) | Vélo ou marche, d'après le sport du tour |
+
+Si l'URL saisie ne correspond à aucune des deux sources, un message d'erreur dédié l'indique. Le
+sélecteur **Profil de routage** (BRouter) ne s'applique qu'à Geovelo : il est automatiquement
+désactivé, avec une note, dès qu'un lien Komoot est détecté (en temps réel, pendant la saisie).
 
 ## Fonctionnement
 
@@ -38,14 +51,18 @@ On se limite donc à parser l'URL publique générée par leur interface web.
 
 ### 2. Niveau 1 — liens Google Maps simples (`js/gmaps-links.js`)
 
-Construit deux formats de lien, en mode vélo :
+Construit deux formats de lien, pour l'un des deux modes de déplacement gérés, **vélo**
+(`bicycling`, par défaut) ou **marche** (`walking`) :
 
-- **Format API** : `https://www.google.com/maps/dir/?api=1&origin=lat,lng&destination=lat,lng&waypoints=lat,lng|lat,lng&travelmode=bicycling`
-  (format documenté officiellement).
-- **Format « chemin »** : `https://www.google.com/maps/dir/lat,lng/lat,lng/.../data=!4m2!4m1!3e1`.
-  Le suffixe `data=!4m2!4m1!3e1` force le mode vélo dans ce format ; **il n'est pas documenté
-  officiellement par Google** mais a été vérifié empiriquement (repris par de nombreux projets
-  communautaires). À utiliser avec cette réserve.
+- **Format API** : `https://www.google.com/maps/dir/?api=1&origin=lat,lng&destination=lat,lng&waypoints=lat,lng|lat,lng&travelmode=bicycling|walking`
+  (format documenté officiellement, `travelmode` variant selon le mode choisi).
+- **Format « chemin »** : `https://www.google.com/maps/dir/lat,lng/lat,lng/.../data=!4m2!4m1!3eN`.
+  Ce suffixe `data=` force le mode de déplacement dans ce format ; **il n'est pas documenté
+  officiellement par Google**, mais son comportement a été vérifié empiriquement (Chrome headless,
+  en inspectant le mode réellement sélectionné dans l'UI Google Maps après redirection) :
+  - `!3e1` → **vélo** (déjà utilisé avant Komoot, reconfirmé).
+  - `!3e2` → **marche** (confirmé ; à ne pas confondre avec `!3e3`, qui sélectionne les
+    **transports en commun**, un mode non géré par cette app).
 
 Les coordonnées sont arrondies à 6 décimales (précision centimétrique, largement suffisante et
 plus lisible).
@@ -55,8 +72,8 @@ plus lisible).
 - La documentation officielle des [Maps URLs](https://developers.google.com/maps/documentation/urls/get-started)
   indique : *« up to three waypoints supported on mobile browsers, and a maximum of nine
   waypoints supported otherwise »* (donc jusqu'à 9 waypoints + origine + destination = 11 points
-  sur navigateur non mobile), une longueur d'URL ≤ 2048 caractères, et `travelmode=bicycling`
-  pour le mode vélo.
+  sur navigateur non mobile), une longueur d'URL ≤ 2048 caractères, et un paramètre `travelmode`
+  (`bicycling`, `walking`, `driving`, `transit`) pour choisir le mode de déplacement.
 - En pratique, **l'interface web et l'application Google Maps plafonnent à 10 points au total**
   (origine + destination + waypoints intermédiaires), ce qui est plus restrictif que les 9
   waypoints de la doc (soit 11 points théoriques). Il y a donc un écart entre la doc (9
@@ -77,7 +94,10 @@ si nécessaire ; chaque segment **reprend en premier point le dernier point du s
 précédent**, pour permettre d'enchaîner les trajets sans perdre le fil. Exemples : 9 ou 10 points
 → 1 segment ; 11 points → 2 segments (`[0..9]`, `[9..10]`) ; 20 points → 3 segments.
 
-### 3. Niveau 2 — tracé cyclable via BRouter (`js/router.js`)
+### 3. Niveau 2 — tracé cyclable via BRouter (`js/router.js`) — Geovelo uniquement
+
+Cette étape ne concerne que les itinéraires **Geovelo** : Komoot fournit directement sa propre
+géométrie et ses propres étapes (voir §5), donc aucun appel BRouter n'est fait pour cette source.
 
 [BRouter](https://brouter.de/) est un moteur de routage vélo/rando communautaire et gratuit,
 utilisable directement depuis le navigateur (CORS ouvert : `Access-Control-Allow-Origin: *`,
@@ -131,7 +151,95 @@ construite en mémoire, plus rapide et déterministe ; un test dédié charge au
 réelle pour vérifier que les sections couvrent bien tout le tracé et que la somme de leurs
 longueurs colle à `track-length`.)*
 
-### 4. Sélection des points intermédiaires (`js/waypoints.js`) — le cœur du projet
+### 4. Parseur et API Komoot (`js/komoot-parser.js`, `js/komoot.js`)
+
+**Parseur d'URL** (`parseKomootUrl`, `js/komoot-parser.js`) : accepte `komoot.com`/`komoot.de` (et
+sous-domaines), avec un identifiant de tour numérique dans le chemin sous `/tour/<id>` ou
+`/invite-tour/<id>` (lien de partage), quel que soit le préfixe de langue éventuel. Le paramètre de
+requête `share_token`, s'il est présent, est extrait et systématiquement renvoyé à l'API (voir
+plus bas). Mêmes conventions d'erreurs que le parseur Geovelo (`KomootParseError`, avec un `code`) :
+
+| code | cas |
+|---|---|
+| `EMPTY` | champ vide |
+| `INVALID_URL` | texte qui n'est pas une URL |
+| `NOT_KOMOOT` | hôte différent de `komoot.com`/`komoot.de` (ou un sous-domaine) — comparaison exacte |
+| `MISSING_TOUR_ID` | hôte Komoot reconnu, mais pas d'identifiant de tour exploitable dans le chemin |
+
+**Appel de l'API** (`fetchKomootTour`, `js/komoot.js`) : l'API publique v007 de Komoot répond en
+CORS ouvert (`Access-Control-Allow-Origin: *`), sans clé requise :
+
+```
+GET https://www.komoot.com/api/v007/tours/<id>?share_token=<token>&_embedded=coordinates,way_types,surfaces,directions
+```
+
+`share_token` est **optionnel pour un tour public**, mais **obligatoire pour un tour partagé en
+privé** (sans lui, l'API répond `403 AccessDenied`) : il est donc toujours transmis dès qu'il est
+présent dans l'URL saisie. Un identifiant de tour inexistant renvoie `404 NotFound`. Ces deux cas
+ont des messages dédiés (`RoutingError`, définie dans `js/errors.js` et partagée avec `router.js` —
+`komoot.js` ne dépend pas de `router.js`, ce sont deux services de récupération de tracé
+indépendants —, avec les codes `FORBIDDEN` et `NOT_FOUND`) ; les autres échecs (réseau, timeout,
+JSON invalide) suivent la même logique que pour BRouter (`NETWORK`, `TIMEOUT`, `HTTP`, `ABORTED`,
+timeout de ~20 s couvrant toute la requête, distinction abandon interne/externe). **Il n'y a pas de
+repli niveau 1 pour Komoot** : sans coordonnées Komoot, il n'y a rien à afficher, donc tout échec de
+l'API est signalé clairement à l'utilisateur plutôt que de basculer silencieusement vers un mode
+dégradé.
+
+**Traitement de la réponse** (`parseKomootTour`), au même format de sortie que
+`parseBrouterResponse` (`{coords, sections, lengthM, anchors, name, sport}`), pour réutiliser tel
+quel `selectWaypoints` :
+
+- `coords` vient de `_embedded.coordinates.items` (`{lat,lng,alt,t}`).
+- `lengthM` vient de `distance` (repli sur la longueur calculée si absent).
+- `sections` vient de `_embedded.way_types.items` (`{from,to,element}`) : contrairement à BRouter,
+  `from`/`to` sont **déjà des index de géométrie**, aucune correspondance à chercher. Un item sans
+  `from`/`to` entiers, ou avec `to <= from`, est ignoré plutôt que de produire des index `NaN`. Les
+  trous non couverts par `way_types` — en fin de tracé, mais aussi **entre deux items** — sont
+  comblés par une section sans tags (jamais choisie comme candidat cyclable faute de tags, comme le
+  reliquat final de BRouter). `element` (ex. `wt#cycleway`, `wt#footway`, `wt#minor_road`,
+  `wt#street`, `wt#primary`, `wt#way`) est converti en tags OSM équivalents
+  (`{highway:'cycleway'}`, etc. ; `wt#way` ou tout type inconnu → `{}`, sans bonus mais candidat
+  toujours valide) pour réutiliser tel quel le bonus « voie cyclable » existant de `waypoints.js`.
+  La surface (`_embedded.surfaces.items`, ex. `sf#asphalt`) est ajoutée (`{surface:'asphalt'}`)
+  seulement quand un unique élément `surfaces` couvre entièrement le tronçon `way_types`
+  correspondant (les deux listes ont des découpages différents) ; sinon elle est ignorée plutôt que
+  devinée. **`nodeTags` vaut toujours `{}`** : Komoot ne fournit aucune information sur les nœuds
+  (carrefours, feux, passages piétons...), donc la règle « nœud dangereux » de `waypoints.js` ne
+  s'applique jamais pour cette source — seules restent actives la longueur minimale de section,
+  l'exclusion des ronds-points et la distance minimale aux ancres.
+- `anchors` vient de `path` (`{location:{lat,lng}, index}`) : chaque étape posée par l'auteur du
+  tour, avec un `index` qui pointe **directement** dans `coords` — aucune projection à refaire,
+  contrairement aux ancres Geovelo (voir §5 ci-dessous, « ancres pré-indexées »). Ce raccourci
+  n'est pris que si **tous** les index sont dans les bornes de la géométrie et **strictement
+  croissants** ; sinon, `idx` est retiré de toutes les ancres (pas seulement la fautive) et
+  `selectWaypoints` retombe entièrement sur la projection par recherche (`projectAnchors`), comme
+  pour Geovelo — plutôt que de risquer des index incohérents.
+- `name` et `sport` (ex. `hike`, `racebike`, `touringbicycle`, `mtb`) sont repris tels quels, pour
+  l'affichage du nom du tour et la déduction du mode de déplacement (`modeForSport`, voir « Mode de
+  déplacement » plus bas).
+
+**Trop d'étapes** : si un tour compte plus d'étapes que la capacité maximale gérée (55, voir
+« Réglage précision » ci-dessous), `limitAnchors` (`js/komoot.js`) sous-échantillonne la liste au
+lieu d'échouer — départ et arrivée toujours conservés, le reste réparti aussi régulièrement que
+possible le long du parcours — avec un message dédié précisant combien d'étapes ont été
+conservées. Ce cas diffère de Geovelo (où dépasser la capacité déclenche une erreur invitant à
+réduire le nombre d'étapes) : l'utilisateur convertissant un tour Komoot ne le possède pas
+forcément et ne peut pas en réduire les étapes.
+
+Fixture réelle enregistrée dans `tests/fixtures/komoot-tour-3041888689.json` (tour **public** — pas
+besoin de `share_token` pour cet exemple précis, l'appel sans jeton répond `200` —, 19 étapes, 464
+points, sport `hike`, ~10,8 km), obtenue avec :
+
+```bash
+curl -s "https://www.komoot.com/api/v007/tours/3041888689?_embedded=coordinates,way_types,surfaces,directions" \
+  > tests/fixtures/komoot-tour-3041888689.json
+```
+
+La fixture versionnée est nettoyée des champs identifiants ou non nécessaires aux tests
+(`_links`, `_embedded.creator`, `description`, `map_image*`, `query`...) : seuls les champs
+exploités par `parseKomootTour` sont conservés.
+
+### 5. Sélection des points intermédiaires (`js/waypoints.js`) — le cœur du projet
 
 Google Maps recalcule l'itinéraire de façon indépendante entre chaque paire de points consécutifs
 qu'on lui donne. Plus la géométrie réelle (issue de BRouter) s'écarte de la ligne droite entre
@@ -178,29 +286,66 @@ de la simplification de Douglas-Peucker, mais gloutonne et sous contrainte de bu
    strictement croissants, candidats insérés entre les bonnes bornes — puis un tri explicite en
    filet de sécurité).
 
+**Ancres pré-indexées (Komoot)** : contrairement aux ancres Geovelo, qui doivent être projetées
+sur la géométrie BRouter (étape 1 ci-dessus), les étapes Komoot (`path`) portent déjà un index
+exact dans leur propre géométrie (`idx`, voir §4). `selectWaypoints` détecte ce cas (toutes les
+ancres passées ont un `idx` numérique) et saute entièrement la projection : les index sont repris
+tels quels, avec seulement des garde-fous (croissance stricte, bornes, départ/arrivée forcés aux
+deux extrémités de la géométrie, comme pour Geovelo). Le reste de l'algorithme (candidats, bonus,
+sélection gloutonne) est strictement identique pour les deux sources.
+
 ### Réglage « précision »
 
 Le sélecteur **« Nombre de liens Google Maps »** (1 à 6, défaut 1) fixe la capacité totale de
 points transportables : `capacité = 9 × nbLiens + 1` (en tenant compte de l'enchaînement des
-segments). Le budget de points ajoutés est `extraBudget = capacité − nbAncres` (minimum 0). Si le
-nombre d'ancres dépasse la capacité, l'app force automatiquement le nombre de liens minimal
-nécessaire (jusqu'à 6 maximum) et le signale à l'utilisateur. Cette indication de capacité est
-toujours affichée : le niveau 2 (tracé cyclable via BRouter) est désormais tenté systématiquement,
-sans case à cocher — seul le **profil de routage** (Sûreté / Randonnée, avec un court texte
-d'aide sous le sélecteur) reste réglable ; le repli automatique et silencieux vers le niveau 1
-(liens directs entre les points Geovelo) en cas d'échec de BRouter reste inchangé.
+segments). Le budget de points ajoutés est `extraBudget = capacité − nbAncres` (minimum 0), commun
+aux deux sources. Si le nombre d'ancres dépasse la capacité, l'app force automatiquement le nombre
+de liens minimal nécessaire (jusqu'à 6 maximum) et le signale à l'utilisateur. Cette indication de
+capacité est toujours affichée. Pour Geovelo, le niveau 2 (tracé cyclable via BRouter) est tenté
+systématiquement, sans case à cocher — seul le **profil de routage** (Sûreté / Randonnée, avec un
+court texte d'aide sous le sélecteur) reste réglable ; le repli automatique et silencieux vers le
+niveau 1 (liens directs entre les points Geovelo) en cas d'échec de BRouter reste inchangé. Pour
+Komoot, ce sélecteur est sans effet (pas de second appel de routage, voir §4) et l'app l'indique.
+
+### Mode de déplacement
+
+Le sélecteur **« Mode »** (Vélo / Marche) contrôle `travelmode` (format API) et le suffixe `data=`
+(format chemin, voir §2) des liens Google Maps générés :
+
+Le mode ne change **que** les paramètres envoyés à Google Maps : il n'influence jamais le moteur de
+routage utilisé pour construire le tracé (BRouter reste interrogé en mode vélo pour Geovelo ; Komoot
+fournit de toute façon directement sa propre géométrie, quel que soit le mode choisi).
+
+- **Geovelo** : pré-rempli sur **vélo** à chaque nouvelle URL Geovelo (cohérent avec Geovelo, un
+  site d'itinéraires cyclables), mais **reste modifiable** par l'utilisateur si un autre mode est
+  souhaité pour la navigation Google Maps.
+- **Komoot** : pré-rempli automatiquement d'après le champ `sport` du tour
+  (`modeForSport`, `js/komoot.js`) au moment de la conversion :
+  - Marche : `hike`, `nordicwalking`, `jogging`, `mountaineering`, `winterhiking`, `snowshoe`,
+    `climbing`, `skitour` (liste non exhaustive et non officiellement documentée par Komoot, à
+    ajuster si de nouvelles valeurs de sport sont observées).
+  - Vélo : tout le reste, y compris tout sport vélo (`racebike`, `touringbicycle`, `mtb`,
+    `e_racebike`, `e_mtb`, `citybike`, `gravel`...), `touring` (volontairement exclu de la liste
+    marche, trop ambigu — à ne pas confondre avec `touringbicycle`) et tout sport non reconnu.
+
+Dans les deux cas, le sélecteur reste **modifiable** par l'utilisateur après le pré-remplissage
+automatique ; son choix est respecté tant que la source ou l'identifiant du tour Komoot saisi ne
+change pas (un changement d'URL réinitialise le pré-remplissage automatique).
 
 ## Interface
 
-- Champ URL, bouton **Convertir** (préremplissable via `?url=...` dans l'URL du site). Une note
+- Un seul champ URL (Geovelo ou Komoot), bouton **Convertir** (préremplissable via `?url=...` dans
+  l'URL du site). La source est détectée en temps réel pendant la saisie (`input`) : le sélecteur
+  **Profil de routage** est désactivé avec une note dès qu'un lien Komoot est reconnu. Une note
   rappelle l'hypothèse d'usage : ouvrir sur ordinateur puis « Envoyer vers votre téléphone »
   (limite mobile à 3 étapes).
-- Zone de statut `aria-live="polite"` pour le chargement, les erreurs et le repli niveau 2 → 1 ;
-  le champ URL reçoit `aria-invalid="true"` en cas d'erreur de saisie, et le titre des résultats
-  reçoit le focus après une conversion réussie.
+- Zone de statut `aria-live="polite"` pour le chargement, les erreurs et le repli niveau 2 → 1
+  (Geovelo uniquement) ; le champ URL reçoit `aria-invalid="true"` en cas d'erreur de saisie, et le
+  titre des résultats reçoit le focus après une conversion réussie. Le nom du tour Komoot, quand il
+  existe, est affiché en tête des résultats.
 - Chaque conversion **annule la précédente** si elle est encore en cours (un seul
-  `AbortController` actif, transmis à `fetchBrouterRoute` via `signal`) ; le bouton Convertir est
-  désactivé (`aria-busy="true"`) pendant le calcul.
+  `AbortController` actif, transmis à `fetchBrouterRoute`/`fetchKomootTour` via `signal`) ; le
+  bouton Convertir est désactivé (`aria-busy="true"`) pendant le calcul.
 - Toute la suite du traitement après le routage (sélection des points, découpage en segments,
   rendu des résultats et de la carte) est protégée par un filet de sécurité : en cas d'erreur
   inattendue, un message clair est affiché et **aucun résultat partiel n'est montré**. La carte
@@ -218,10 +363,26 @@ d'aide sous le sélecteur) reste réglable ; le repli automatique et silencieux 
   départ/arrivée, étapes Geovelo, points ajoutés et limites de segment (comparées par **index**,
   pas par égalité de coordonnées flottantes), `fitBounds` automatique, légende générée
   dynamiquement par `map.js` (une seule source de vérité pour les couleurs).
-- Bouton **Exporter GPX** : génère un fichier `itineraire-geovelo.gpx` avec les points envoyés à
-  Google Maps (`<wpt>`) et le tracé — en `<trk>`/`<trkseg>` en niveau 2 (tracé réellement suivi),
-  ou en `<rte>`/`<rtept>` en niveau 1 (suite d'étapes reliées en ligne droite, pas une trace
-  réelle : l'élément GPX le plus fidèle sémantiquement).
+- Bouton **Exporter GPX** : génère un fichier `itineraire.gpx` avec les points envoyés à
+  Google Maps (`<wpt>`) et le tracé — en `<trk>`/`<trkseg>` en niveau 2 (tracé réellement suivi,
+  systématique pour Komoot), ou en `<rte>`/`<rtept>` en niveau 1 (suite d'étapes reliées en ligne
+  droite, pas une trace réelle : l'élément GPX le plus fidèle sémantiquement ; Geovelo uniquement).
+
+### Politique de `Referer` et tuiles OpenStreetMap
+
+La page déclare `<meta name="referrer" content="strict-origin-when-cross-origin">` : les requêtes
+vers des sites tiers ne transportent que l'origine, jamais le chemin ni la query — le
+préremplissage `?url=...` peut en effet contenir un **jeton de partage Komoot**.
+
+**Ne pas remplacer cette valeur par `no-referrer`** : les serveurs de tuiles OpenStreetMap
+exigent un `Referer` pour identifier l'application appelante (politique d'usage des tuiles). Sans
+lui, ils renvoient — **avec un statut HTTP 200**, donc sans erreur visible côté code — une tuile
+« Access blocked » à la place de la carte. Vérification rapide (la vraie tuile pèse plusieurs
+dizaines de Ko, la tuile bloquée environ 7 Ko) :
+
+```bash
+curl -s -e "https://joris-lft.github.io/" https://tile.openstreetmap.org/13/4127/2984.png | wc -c
+```
 
 ### Sécurité du chargement des dépendances (SRI)
 
@@ -259,13 +420,25 @@ npm test
 
 Suite `node:test` + `node:assert/strict` couvrant : le parseur Geovelo (inversion lon/lat, chaque
 code d'erreur, validation stricte des nombres, contrôle de domaine exact, décodage percent-encodé) ;
-les liens Google Maps (formats, découpage en segments, longueur d'URL) ; les utilitaires
+le parseur Komoot (chaque code d'erreur, `/tour/<id>` et `/invite-tour/<id>`, `komoot.de`,
+`share_token`) ; les liens Google Maps (formats, mode vélo/marche — dont le suffixe `!3e2` vérifié
+empiriquement pour la marche —, découpage en segments, longueur d'URL) ; les utilitaires
 géométriques ; BRouter (construction d'URL, parsing — y compris sans correspondance exacte, sur la
 fixture réelle —, gestion d'erreurs réseau/HTTP/timeout/abandon externe via un `fetch` mocké,
-fenêtre de repli bornée) ; la sélection des points intermédiaires (géométrie en « L », boucle,
-aller-retour, rond-point exclu, nœud dangereux évité, candidat trop proche d'une ancre exclu,
-budget respecté, index strictement croissants, ligne droite sans ajout) ; et la génération GPX
-(`<trk>` et `<rte>`).
+fenêtre de repli bornée) ; l'API Komoot (construction d'URL avec `tourId` encodé, parsing sur la
+fixture réelle — sections couvrant tout le tracé, 19 ancres à index croissants, conversion
+`way_types`/`surfaces` —, robustesse sur des réponses synthétiques dégradées — `way_types`
+invalides, trou intérieur comblé, surface ambiguë ignorée, coordonnée `null`, index `path` hors
+bornes ou non croissants (repli sans `idx`) —, `modeForSport`, `limitAnchors` (sous-échantillonnage
+départ/arrivée conservés, sans doublon), gestion d'erreurs réseau/403/404/timeout/abandon via un
+`fetch` mocké) ; la sélection des points intermédiaires (géométrie en « L », boucle, aller-retour,
+rond-point exclu, nœud dangereux évité, candidat trop proche d'une ancre exclu, budget respecté,
+index strictement croissants, ligne droite sans ajout, **ancres pré-indexées façon Komoot** —
+utilisées directement, départ/arrivée forcés aux extrémités avant la correction de croissance,
+déduplication même en cas d'index d'origine très hors bornes) ; la génération GPX (`<trk>` et
+`<rte>`) ; et des **tests de sécurité** dédiés vérifiant qu'un champ superflu porté par un point
+(ex. un jeton de partage) ne se retrouve jamais dans `parseKomootTour`, `buildApiUrl`,
+`buildPathUrl` ou `buildGpx`.
 
 ## Déploiement GitHub Pages
 
@@ -287,5 +460,17 @@ quels.
   requête par conversion, timeout côté client, pas d'appels en boucle), avec attribution
   OSM/BRouter affichée dans l'UI et ce README. En cas d'indisponibilité ou de réponse trop lente,
   l'app se replie automatiquement sur le niveau 1.
-- Le format « chemin » `data=!4m2!4m1!3e1` n'étant pas documenté officiellement par Google, son
+- Le format « chemin » `data=!4m2!4m1!3eN` n'étant pas documenté officiellement par Google, son
   comportement pourrait changer sans préavis ; le format API reste la référence.
+- **Komoot — pas de règle « nœud dangereux »** : l'API Komoot ne fournit aucune information sur les
+  nœuds (carrefours, feux, passages piétons...), contrairement à BRouter (`NodeTags`). La règle
+  correspondante de `waypoints.js` (candidat exclu à moins de 30 m d'un nœud dangereux) est donc
+  inactive pour cette source : seules restent actives la longueur minimale de section, l'exclusion
+  des ronds-points et la distance minimale aux ancres (voir §5).
+- **Komoot — mode déduit du sport, pas garanti exact** : la correspondance sport → mode
+  (`modeForSport`, voir « Mode de déplacement ») est une heuristique sur une liste de sports
+  connus ; un sport Komoot inconnu ou mal catégorisé retombe sur le vélo. L'utilisateur peut
+  toujours corriger le sélecteur Mode.
+- **Komoot — tour privé sans lien de partage impossible** : un tour non public sans `share_token`
+  dans l'URL est rejeté par l'API (`403 AccessDenied`) ; il faut utiliser le lien obtenu via le
+  bouton « Partager » de Komoot (qui inclut ce jeton).

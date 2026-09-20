@@ -48,6 +48,15 @@ test('buildGpx throws when the track is empty', () => {
   assert.throws(() => buildGpx([], []));
 });
 
+test('security: buildGpx never leaks extra point properties (e.g. a Komoot share token) into the GPX', () => {
+  const track = [
+    { lat: 43.0, lng: 1.0, shareToken: 'SECRET_TOKEN' },
+    { lat: 43.1, lng: 1.1, shareToken: 'SECRET_TOKEN' },
+  ];
+  const gpx = buildGpx(track, track);
+  assert.doesNotMatch(gpx, /SECRET_TOKEN/);
+});
+
 test('buildGpx with asRoute produces a <rte> with <rtept>, no <trk>', () => {
   const track = [
     { lat: 43.0, lng: 1.0, kind: 'anchor' },

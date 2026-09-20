@@ -2,14 +2,11 @@
 // La construction/le parsing sont purs et testables ; seul fetchBrouterRoute
 // touche au réseau (mockable via globalThis.fetch dans les tests).
 import { cumulativeDistances } from './geo.js';
+import { RoutingError } from './errors.js';
 
-export class RoutingError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = 'RoutingError';
-    this.code = code;
-  }
-}
+// Réexporté pour compatibilité (code existant et tests important RoutingError
+// depuis router.js) ; la définition vit dans errors.js, partagée avec komoot.js.
+export { RoutingError };
 
 /** Construit l'URL de requête BRouter pour une liste ordonnée de points {lat,lng}. */
 export function buildBrouterUrl(points, profile = 'safety', alternativeidx = 0) {

@@ -154,9 +154,56 @@ function projectAnchors(coords, anchors) {
 }
 
 /**
+ * Vrai si toutes les ancres portent déjà un index numérique de géométrie
+ * (cas Komoot : `path[].index` pointe directement dans `_embedded.coordinates`,
+ * aucune projection à refaire). Les ancres Geovelo n'ont pas de champ `idx`.
+ */
+function hasPreIndexedAnchors(anchors) {
+  return anchors.every((a) => Number.isFinite(a.idx));
+}
+
+/**
+ * Utilise directement les index fournis (normalement déjà croissants et dans
+ * les bornes, comme les étapes `path` d'un tour Komoot) plutôt que de les
+ * projeter par recherche : contrairement à Geovelo, ces index sont exacts et
+ * fiables. Vérifie tout de même la cohérence et corrige a minima les écarts
+ * (garde-fous) sans lever d'erreur :
+ * 1. Départ → index 0, arrivée → dernier index, comme pour Geovelo — posés
+ *    AVANT la correction de croissance, pour que celle-ci parte de bornes
+ *    déjà correctes plutôt que d'un `idx` d'origine potentiellement aberrant.
+ * 2. Passe avant (depuis le départ) : chaque index est ramené à au moins
+ *    `précédent + 1`, sans jamais dépasser `lastIdx - 1` (réservé à l'arrivée).
+ * 3. Passe arrière (depuis l'arrivée) : élimine les doublons résiduels que la
+ *    passe avant peut créer en fin de tracé si trop d'ancres se pressent près
+ *    de `lastIdx` (ex. 3 sommets, ancres `idx` [0, 999, 1000] → [0, 1, 2] et
+ *    non [0, 2, 2]).
+ */
+function usePreIndexedAnchors(coords, anchors) {
+  const lastIdx = coords.length - 1;
+  const idx = anchors.map((a) => Math.max(0, Math.min(Math.round(a.idx), lastIdx)));
+
+  idx[0] = 0;
+  idx[idx.length - 1] = lastIdx;
+
+  for (let i = 1; i < idx.length - 1; i++) {
+    if (idx[i] <= idx[i - 1]) idx[i] = idx[i - 1] + 1;
+    idx[i] = Math.min(idx[i], lastIdx - 1);
+  }
+  for (let i = idx.length - 2; i >= 1; i--) {
+    if (idx[i] >= idx[i + 1]) idx[i] = idx[i + 1] - 1;
+  }
+
+  return anchors.map((anchor, i) => ({ lat: anchor.lat, lng: anchor.lng, kind: 'anchor', idx: idx[i] }));
+}
+
+/**
  * @param {object} params
- * @param {{coords:Array<{lat,lng}>, sections:Array}} params.route Sortie de router.parseBrouterResponse.
- * @param {Array<{lat,lng}>} params.anchors Points Geovelo, dans l'ordre (from, steps..., to).
+ * @param {{coords:Array<{lat,lng}>, sections:Array}} params.route Sortie de router.parseBrouterResponse
+ *   (ou komoot.parseKomootTour, même structure).
+ * @param {Array<{lat,lng,idx?:number}>} params.anchors Points, dans l'ordre (from, steps..., to).
+ *   Si chaque ancre porte un `idx` numérique (ex. étapes Komoot déjà indexées
+ *   dans la géométrie), la projection par recherche est sautée (voir
+ *   `usePreIndexedAnchors`) ; sinon, comportement Geovelo inchangé (`projectAnchors`).
  * @param {number} params.extraBudget Nombre de points intermédiaires supplémentaires autorisés.
  * @returns {Array<{lat,lng,kind:'anchor'|'added',idx:number}>} Points triés par position sur la géométrie.
  */
@@ -171,8 +218,11 @@ export function selectWaypoints({ route, anchors, extraBudget = 0 }) {
   const { coords, sections = [] } = route;
   const cumDist = cumulativeDistances(coords);
 
-  // 1. Projection des ancres (voir projectAnchors ci-dessus).
-  const selected = projectAnchors(coords, anchors);
+  // 1. Projection des ancres (voir projectAnchors ci-dessus), ou reprise
+  // directe des index déjà fournis (voir usePreIndexedAnchors ci-dessus).
+  const selected = hasPreIndexedAnchors(anchors)
+    ? usePreIndexedAnchors(coords, anchors)
+    : projectAnchors(coords, anchors);
 
   const budget = Math.max(0, Math.floor(extraBudget) || 0);
   if (budget === 0) return selected;
